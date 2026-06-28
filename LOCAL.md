@@ -49,14 +49,48 @@ The site is empty until you import recipes, then map and index them:
 
 ```bash
 C="docker compose -f docker-compose.local.yml exec django python manage.py"
-$C load_beerxml_recipe /app/var/raw_data/recipe.xml my-unique-id   # or load_mmum_recipe / load_beersmith_recipe
+$C load_beerxml_recipe /app/var/raw_data/recipe.xml beerxml:my-recipe   # or load_mmum_recipe / load_beersmith_recipe
 $C map_styles && $C map_hops && $C map_fermentables && $C map_yeasts
 $C calculate_metrics && $C calculate_hop_pairings
 $C refresh_elasticsearch_data        # populates the ES-backed search box
 ```
 
-Drop import files into the `app_var` volume at `/app/var/raw_data` (host copy:
-`docker compose -f docker-compose.local.yml cp ./recipe.xml django:/app/var/raw_data/`).
+The `uid` **must** be `source:id` (exactly one colon, ≤ 32 chars) — e.g.
+`beerxml:my-recipe`. A bare id crashes the loader (`source, source_id =
+uid.split(":")`). Import is idempotent; re-add a uid with `--replace` to overwrite.
+
+### MMUM (automated)
+
+`fetch_mmum` pulls the maischemalzundmehr.de archive for you — see the bulk run
+and the scheduled incremental below; no manual files needed.
+
+### BeerXML / BeerSmith (manual files)
+
+Both are one-recipe-per-file. Use a distinct source prefix per origin
+(`beerxml:`, `beersmith:`, `bf:` …) so ids never collide.
+
+Zero-setup smoke test using the bundled sample files (already in the image):
+
+```bash
+$C load_beerxml_recipe   /app/recipe_db/etl/format/fixtures/beerxml.xml   beerxml:coffee-stout
+$C load_beersmith_recipe /app/recipe_db/etl/format/fixtures/beersmith.xml beersmith:sample
+```
+
+**Where to get files** — BeerXML: export from Brewer's Friend (public recipe →
+Download → BeerXML), Brewfather, BeerSmith desktop, or brewtarget. BeerSmith:
+beersmithrecipes.com (recipe → Download `.bsmx`) or the BeerSmith desktop app.
+
+Batch-import a folder (BeerXML shown; swap the command + extension for `.bsmx`):
+
+```bash
+docker compose -f docker-compose.local.yml cp ./beerxml-files django:/app/var/raw_data/beerxml
+docker compose -f docker-compose.local.yml exec django sh -c \
+  'for f in /app/var/raw_data/beerxml/*.xml; do python manage.py load_beerxml_recipe "$f" "beerxml:$(basename "$f" .xml)"; done'
+```
+
+After any manual import, run the map/metrics/index block above so it shows in the
+charts and search. If an export bundles many recipes in one file, split it first
+(the loaders take a single uid per file).
 
 ## Scheduled incremental import
 
