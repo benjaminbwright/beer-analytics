@@ -61,7 +61,9 @@ def get_recipes_bulk_updates() -> Iterable[dict]:
 
 
 def bulk_delete_recipe_document(recipe_uid: str) -> dict:
-    return {'delete': {'_index': RECIPES_INDEX_NAME, '_id': recipe_uid}}
+    # elasticsearch-py's streaming_bulk expand_action expects _op_type, not the
+    # raw {'delete': {...}} bulk-line format (which trips "index is missing").
+    return {'_op_type': 'delete', '_index': RECIPES_INDEX_NAME, '_id': recipe_uid}
 
 
 def bulk_add_recipe_document(recipe: Recipe) -> dict:
