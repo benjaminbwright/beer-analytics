@@ -61,6 +61,20 @@ class MmumParser(FormatParser):
         return None
 
     def get_fermentables(self, json_data: JsonParser) -> iter:
+        # MMUM ExportVersion 2.0: fermentables are an array under "Malze",
+        # each {Name, Menge, Einheit}.
+        if json_data.has("Malze"):
+            for item in json_data.get_list("Malze"):
+                name = item.string_or_none("Name")
+                if name is None:
+                    continue
+                amount = item.float_or_none("Menge")
+                if amount is not None and item.string_or_none("Einheit") == "kg":
+                    amount *= 1000  # normalise to grams
+                yield RecipeFermentable(kind_raw=clean_kind(name), amount=amount)
+            return
+
+        # Legacy flat format (Malz1, Malz1_Menge, ...).
         i = 1
         while (kind := json_data.string_or_none("Malz%d" % i)) is not None:
             kind = clean_kind(kind)
@@ -74,7 +88,40 @@ class MmumParser(FormatParser):
             yield RecipeFermentable(kind_raw=kind, amount=amount)
             i += 1
 
+    # MMUM 2.0 "Typ" (in Hopfenkochen) -> RecipeHop use.
+    HOP_TYP_USE = {
+        "Vorderwuerze": RecipeHop.FIRST_WORT,
+        "Whirlpool": RecipeHop.AROMA,
+        "Standard": RecipeHop.BOIL,
+    }
+
     def get_hops(self, json_data: JsonParser) -> iter:
+        # MMUM ExportVersion 2.0: boil/whirlpool/first-wort hops are an array
+        # under "Hopfenkochen"; dry hops under "Stopfhopfen".
+        if json_data.has("Hopfenkochen") or json_data.has("Stopfhopfen"):
+            for item in json_data.get_list("Hopfenkochen"):
+                kind = item.string_or_none("Sorte")
+                if kind is None:
+                    continue
+                use = self.HOP_TYP_USE.get(item.string_or_none("Typ"), RecipeHop.BOIL)
+                time = item.float_or_none("Zeit")
+                if time is not None:
+                    time = ceil(time)
+                    if use == RecipeHop.BOIL and time < 5:  # short boil ~ aroma
+                        use = RecipeHop.AROMA
+                yield RecipeHop(kind_raw=clean_kind(kind), use=use,
+                                alpha=item.float_or_none("Alpha"),
+                                amount=item.float_or_none("Menge"), time=time)
+            for item in json_data.get_list("Stopfhopfen"):
+                kind = item.string_or_none("Sorte")
+                if kind is None:
+                    continue
+                yield RecipeHop(kind_raw=clean_kind(kind), use=RecipeHop.DRY_HOP,
+                                alpha=item.float_or_none("Alpha"),
+                                amount=item.float_or_none("Menge"))
+            return
+
+        # Legacy flat format.
         for hop in self.parse_hops(json_data, "Hopfen_VWH"):
             hop.use = RecipeHop.FIRST_WORT
             yield hop
