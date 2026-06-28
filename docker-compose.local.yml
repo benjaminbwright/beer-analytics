@@ -1,0 +1,111 @@
+# Local lab stack for beer-analytics — fully self-contained, nothing installed on
+# the host (only the Docker engine). Builds the PRODUCTION image: the frontend
+# (yarn) and Python deps (poetry) are compiled inside the image's build stages, so
+# the very same artifact is what graduates to k3s and what you push to the NAS
+# registry later. The upstream docker-compose.yaml is a dev rig (bind-mounts
+# source + needs `yarn start` on the host) — we deliberately don't use it.
+#
+# Usage:
+#   docker compose -f docker-compose.local.yml up -d --build
+#   docker compose -f docker-compose.local.yml exec django python manage.py migrate
+#   docker compose -f docker-compose.local.yml exec django python manage.py load_initial_data
+#   open http://localhost:8000
+#
+# Recipe data is NOT bundled (legal reasons). Import + index it to light up the
+# analytics and the ES-backed search box:
+#   docker compose -f docker-compose.local.yml exec django python manage.py load_beerxml_recipe <file> <id>
+#   docker compose -f docker-compose.local.yml exec django python manage.py map_styles   # ...map_hops, etc.
+#   docker compose -f docker-compose.local.yml exec django python manage.py refresh_elasticsearch_data
+
+name: beer-analytics
+
+services:
+  django:
+    build:
+      context: .
+      dockerfile: ./build/production/Dockerfile
+    image: beer-analytics:local
+    container_name: beer_analytics_app
+    restart: unless-stopped
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings_prod
+      APP_URL: ${APP_URL}
+      SECRET_KEY: ${SECRET_KEY}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+      DATABASE_HOST: db
+      DATABASE_NAME: ${DATABASE_NAME}
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      CACHE_DIR: /app/var/cache
+      RAW_DATA_DIR: /app/var/raw_data
+      LOG_FILE: /dev/stderr
+      LOG_LEVEL: ${LOG_LEVEL}
+      WEB_ANALYTICS_ROOT_URL: /wa/
+      WEB_ANALYTICS_SITE_ID: 0
+      ELASTIC_URL: http://elasticsearch:9200
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
+    volumes:
+      # Writable runtime dir for the file-based cache + raw import data. Static
+      # assets are baked into the image (collectstatic runs in the entrypoint).
+      - app_var:/app/var
+    ports:
+      # host:container — gunicorn listens on 5000 inside. Bound to 0.0.0.0 so the
+      # Caddy proxy (on the Pi) can reach this published port over the LAN. The
+      # host port is non-default (see .env) to avoid clashing with other stacks.
+      - "${APP_HTTP_PORT}:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_started
+
+  db:
+    image: mariadb:11
+    container_name: beer_analytics_db
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${DATABASE_NAME}
+      MARIADB_USER: ${DATABASE_USER}
+      MARIADB_PASSWORD: ${DATABASE_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DATABASE_ROOT_PASSWORD}
+      MARIADB_AUTO_UPGRADE: 1
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    ports:
+      # Optional: reach the DB from a host GUI. Bound to localhost only.
+      - "127.0.0.1:${DB_HOST_PORT}:3306"
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+    container_name: beer_analytics_es
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.license.self_generated.type=basic
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    mem_limit: 1g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    ports:
+      # Optional: reach ES from the host. Bound to localhost only.
+      - "127.0.0.1:${ES_HOST_PORT}:9200"
+
+volumes:
+  db_data:
+  es_data:
+  app_var:
