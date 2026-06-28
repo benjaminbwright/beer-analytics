@@ -68,23 +68,27 @@ def object_url(item: object):
 try:
     import content
 except ImportError:
-    def get_style_description() -> Optional[str]:
+    # No `content` module (the proprietary descriptions app isn't in the public
+    # repo). These stubs must accept the same id arg as the real implementations
+    # below, or the `description` template filter 500s whenever a page renders an
+    # item description (e.g. the homepage's popular hops/styles).
+    def get_style_description(*args) -> Optional[str]:
         return None
-    def get_hop_description() -> Optional[str]:
+    def get_hop_description(*args) -> Optional[str]:
         return None
-    def get_hop_type_description() -> Optional[str]:
+    def get_hop_type_description(*args) -> Optional[str]:
         return None
-    def get_flavor_description() -> Optional[str]:
+    def get_flavor_description(*args) -> Optional[str]:
         return None
-    def get_flavor_category_description() -> Optional[str]:
+    def get_flavor_category_description(*args) -> Optional[str]:
         return None
-    def get_fermentable_description() -> Optional[str]:
+    def get_fermentable_description(*args) -> Optional[str]:
         return None
-    def get_fermentable_type_description() -> Optional[str]:
+    def get_fermentable_type_description(*args) -> Optional[str]:
         return None
-    def get_yeast_description() -> Optional[str]:
+    def get_yeast_description(*args) -> Optional[str]:
         return None
-    def get_yeast_type_description() -> Optional[str]:
+    def get_yeast_type_description(*args) -> Optional[str]:
         return None
 else:
     from content.loader import (fetch_style_description, fetch_hop_description, fetch_hop_type_description,
