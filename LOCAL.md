@@ -58,6 +58,33 @@ $C refresh_elasticsearch_data        # populates the ES-backed search box
 Drop import files into the `app_var` volume at `/app/var/raw_data` (host copy:
 `docker compose -f docker-compose.local.yml cp ./recipe.xml django:/app/var/raw_data/`).
 
+## Scheduled incremental import
+
+An [Ofelia](https://github.com/mcuadros/ofelia) `scheduler` service runs a daily
+(04:00) incremental pull, defined in `ofelia.ini`. It execs into the app
+container and runs:
+
+```
+fetch_mmum --since-max --stop-after-misses 50 --delay 2
+  → map_* → calculate_metrics → calculate_hop_pairings → refresh_elasticsearch_data
+```
+
+`--since-max` starts just past the highest imported id and `--stop-after-misses`
+halts once it hits 50 consecutive non-existent ids (the archive frontier), so a
+run with nothing new costs ~50 requests — not a re-scan of the whole archive.
+Jobs live in `ofelia.ini` (not as labels on the app), so editing the schedule
+never forces a recreate of the running app container.
+
+```bash
+docker compose -f docker-compose.local.yml logs -f scheduler   # watch the cron
+# run the incremental once, by hand:
+docker compose -f docker-compose.local.yml exec django python manage.py fetch_mmum --since-max --stop-after-misses 50 --delay 2
+```
+
+Note: `--since-max` only walks forward from the frontier, so recipes *backfilled*
+into old gaps won't be picked up; re-run a bounded `fetch_mmum --start A --end B`
+occasionally if you want to sweep for those.
+
 ## Day-to-day
 
 ```bash

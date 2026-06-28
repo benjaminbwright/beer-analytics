@@ -105,6 +105,20 @@ services:
       # Optional: reach ES from the host. Bound to localhost only.
       - "127.0.0.1:${ES_HOST_PORT}:9200"
 
+  # Container-native cron (Ofelia). Runs the incremental MMUM fetch on a schedule
+  # by exec-ing into the app container (jobs defined in ofelia.ini). No host cron,
+  # no labels on the app service. Analogous to a k8s CronJob after graduation.
+  scheduler:
+    image: mcuadros/ofelia:latest
+    container_name: beer_analytics_scheduler
+    restart: unless-stopped
+    depends_on:
+      - django
+    command: daemon --config=/etc/ofelia/config.ini
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./ofelia.ini:/etc/ofelia/config.ini:ro
+
 volumes:
   db_data:
   es_data:

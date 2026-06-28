@@ -30,12 +30,25 @@ class Command(BaseCommand):
         parser.add_argument("--replace", action="store_true", help="Re-download + re-import ids already in the DB")
         parser.add_argument("--max-failures", type=int, default=0,
                             help="Stop after this many CONSECUTIVE errors (0 = never stop)")
+        parser.add_argument("--since-max", action="store_true",
+                            help="Start just past the highest already-imported mmum id (frontier-only incremental)")
+        parser.add_argument("--stop-after-misses", type=int, default=0,
+                            help="Stop after this many CONSECUTIVE non-existent ids (the archive frontier; 0 = off)")
 
     def handle(self, *args, **options):
         start, end = options["start"], options["end"]
         delay, timeout = options["delay"], options["timeout"]
         replace = options["replace"]
         max_consec = options["max_failures"]
+        stop_after_misses = options["stop_after_misses"]
+
+        # Frontier-only incremental: begin just past the highest imported id so we
+        # only request genuinely new recipes, not the whole archive's gaps.
+        if options["since_max"]:
+            existing = Recipe.objects.filter(source=SOURCE).values_list("source_id", flat=True)
+            nums = [int(s) for s in existing if str(s).isdigit()]
+            start = (max(nums) + 1) if nums else 1
+            self.stdout.write("since-max: starting at id %d" % start)
 
         out_dir = os.path.join(settings.__getattr__("RAW_DATA_DIR"), SOURCE)
         os.makedirs(out_dir, exist_ok=True)
@@ -45,7 +58,8 @@ class Command(BaseCommand):
         session.headers.update({"User-Agent": USER_AGENT})
 
         imported = skipped = missing = failed = 0
-        consec = 0
+        consec = 0          # consecutive request/import errors
+        consec_missing = 0  # consecutive non-existent ids (frontier detector)
 
         self.stdout.write("Fetching MMUM ids %d-%d (delay=%ss)" % (start, end, delay))
         for rid in range(start, end + 1):
@@ -54,6 +68,7 @@ class Command(BaseCommand):
             # Resume cheaply: don't re-request what's already imported.
             if not replace and Recipe.objects.filter(pk=uid).exists():
                 skipped += 1
+                consec_missing = 0
                 continue
 
             try:
@@ -79,6 +94,11 @@ class Command(BaseCommand):
             if not valid:
                 missing += 1
                 consec = 0
+                consec_missing += 1
+                if stop_after_misses and consec_missing >= stop_after_misses:
+                    self.stdout.write("Reached frontier: %d consecutive misses ending at id %d"
+                                      % (consec_missing, rid))
+                    break
                 time.sleep(delay)
                 continue
 
@@ -92,6 +112,7 @@ class Command(BaseCommand):
                 imported += 1 if created else 0
                 skipped += 0 if created else 1
                 consec = 0
+                consec_missing = 0
             except Exception as e:
                 failed += 1
                 consec += 1
