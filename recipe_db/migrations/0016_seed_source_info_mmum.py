@@ -8,7 +8,9 @@ SOURCES = [
     {
         "source_id": "mmum",
         "name": "Maische Malz und Mehr",
-        "icon": "https://www.maischemalzundmehr.de/favicon.ico",
+        # Self-contained base64 SVG (beer glass) data URI — no external fetch /
+        # broken image; fits SourceInfo.icon (max 10240).
+        "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiI+PHJlY3QgeD0iMyIgeT0iMyIgd2lkdGg9IjciIGhlaWdodD0iMTEiIHJ4PSIxLjIiIGZpbGw9IiNmMGI0MjkiLz48cmVjdCB4PSIzIiB5PSIzIiB3aWR0aD0iNyIgaGVpZ2h0PSIzIiByeD0iMS4yIiBmaWxsPSIjZmZmOGU2Ii8+PHBhdGggZD0iTTEwIDVoMi4yQTEuOCAxLjggMCAwIDEgMTQgNi44djIuNEExLjggMS44IDAgMCAxIDEyLjIgMTFIMTB6IiBmaWxsPSJub25lIiBzdHJva2U9IiNmMGI0MjkiIHN0cm9rZS13aWR0aD0iMS4zIi8+PC9zdmc+Cg==",
         "page_url": "https://www.maischemalzundmehr.de/",
         "recipe_url": "https://www.maischemalzundmehr.de/index.php?id={}&inhaltmitte=rezept",
     },
