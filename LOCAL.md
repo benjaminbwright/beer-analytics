@@ -51,9 +51,17 @@ The site is empty until you import recipes, then map and index them:
 C="docker compose -f docker-compose.local.yml exec django python manage.py"
 $C load_beerxml_recipe /app/var/raw_data/recipe.xml beerxml:my-recipe   # or load_mmum_recipe / load_beersmith_recipe
 $C map_styles && $C map_hops && $C map_fermentables && $C map_yeasts
+$C update_associated                  # REQUIRED: builds associated_* tables the charts read from
 $C calculate_metrics && $C calculate_hop_pairings
 $C refresh_elasticsearch_data        # populates the ES-backed search box
 ```
+
+`update_associated` is easy to miss (the upstream README omits it) but is
+**required** — the per-style/hop charts filter on the `associated_*` M2M tables,
+not the direct FK, so without it every chart shows "Not enough data" even for
+well-populated styles. On prod settings the chart JSON is cached (file cache), so
+after a backfill clear it: `$C shell -c "from django.core.cache import caches;
+[caches[a].clear() for a in ['default','data','images']]"`.
 
 The `uid` **must** be `source:id` (exactly one colon, ≤ 32 chars) — e.g.
 `beerxml:my-recipe`. A bare id crashes the loader (`source, source_id =
