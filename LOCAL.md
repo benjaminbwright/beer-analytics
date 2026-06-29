@@ -100,6 +100,32 @@ After any manual import, run the map/metrics/index block above so it shows in th
 charts and search. If an export bundles many recipes in one file, split it first
 (the loaders take a single uid per file).
 
+### Brewer's Friend bulk datasets
+
+Two public Kaggle dumps, two loaders (both use source `brewersfriend`; the real
+recipe id is parsed from each row's `url`, so links resolve):
+
+- `load_brewersfriend_csv` — the scalar-only `recipeData.csv` (style/OG/FG/ABV/
+  IBU/colour, **no ingredients**).
+- `load_brewersfriend_full` — the rich `recipes_full.txt` (~180k recipes **with
+  fermentables / hops / yeast**). It's one big `{"0": {...}, "1": {...}}` object;
+  the loader streams it record-by-record (raw_decode per line) so the 170 MB file
+  never loads into memory. Feeds each record through the app's own `RecipeLoader`,
+  so validation / `amount_percent` / gravity+colour derivation match every other
+  importer. Defaults to **replacing** existing ids (use `--skip-existing` to keep
+  them); `--limit N` for a test slice.
+
+```bash
+docker cp "recipes_full.txt" beer_analytics_app:/app/var/raw_data/brewersfriend_full.txt
+$C load_brewersfriend_full /app/var/raw_data/brewersfriend_full.txt
+```
+
+Then run the full map/metrics/index block above (all four `map_*` steps —
+ingredients need `map_hops`/`map_fermentables`/`map_yeasts`, not just styles),
+then `load_elasticsearch_data --reset` and clear the caches. Note: a few rows
+carry absurd dry-hop times (e.g. `"14515200 days"`); the loader clamps anything
+over 30 days to null so it can't overflow the INT `time` column.
+
 ## Scheduled incremental import
 
 An [Ofelia](https://github.com/mcuadros/ofelia) `scheduler` service runs a daily
